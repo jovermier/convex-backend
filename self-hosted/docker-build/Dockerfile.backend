@@ -30,8 +30,13 @@ printf 'APT::Get::Assume-Yes \"true\";\n' > /etc/apt/apt.conf.d/90forceyes
 printf 'DPkg::Lock::Timeout \"30\";\n' > /etc/apt/apt.conf.d/85timeout
 echo 'DEBIAN_FRONTEND=noninteractive' > /etc/environment
 apt-get update
-apt-get install -y --no-install-recommends cmake libclang-dev libstdc++6 libc6
+apt-get install -y --no-install-recommends build-essential cmake libclang-dev libstdc++6 libc6
+# Set LIBCLANG_PATH for RocksDB compilation
+export LIBCLANG_PATH=/usr/lib/x86_64-linux-gnu
 EOF
+
+# Set environment variables for RocksDB compilation
+ENV LIBCLANG_PATH=/usr/lib/x86_64-linux-gnu
 
 # Install Just (for build scripts)
 RUN cargo install just

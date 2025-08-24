@@ -1,0 +1,59 @@
+# Test Dockerfile without cache mounts to isolate binary extraction issue
+FROM lukemathwalker/cargo-chef:latest-rust-1 AS build
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Install build dependencies
+RUN <<EOF
+printf 'APT::Acquire::Retries "10";\n' > /etc/apt/apt.conf.d/80retries
+printf 'APT::Get::Assume-Yes "true";\n' > /etc/apt/apt.conf.d/90forceyes
+printf 'DPkg::Lock::Timeout "30";\n' > /etc/apt/apt.conf.d/85timeout
+echo 'DEBIAN_FRONTEND=noninteractive' > /etc/environment
+apt-get update
+apt-get install -y --no-install-recommends build-essential cmake libclang-dev libstdc++6 libc6
+EOF
+
+# Set environment variables for RocksDB compilation
+ENV LIBCLANG_PATH=/usr/lib/x86_64-linux-gnu
+
+# Install Just and Node.js
+RUN cargo install just
+COPY .nvmrc /nvmrc
+RUN <<EOF
+NODE_MAJOR=$(cat /nvmrc | cut -d. -f1 | tr -d 'v\n')
+curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash -
+NODE_VERSION=$(cat /nvmrc | tr -d 'v\n')
+apt-get install -y --no-install-recommends nodejs=${NODE_VERSION}-1nodesource1
+EOF
+
+WORKDIR /convex
+
+# Install Rust toolchain
+COPY rust-toolchain /rust-toolchain
+RUN rustup self update && rustup toolchain install
+
+# Install npm dependencies
+COPY scripts ./scripts
+RUN npm ci --prefix scripts/
+ENV RUSH_BUILD_CACHE_ENABLED=0
+COPY npm-packages ./npm-packages
+COPY Justfile ./
+RUN just rush install
+
+# Copy source code
+COPY . .
+
+# Build without cache mounts
+RUN cargo build --release -p local_backend --bin convex-local-backend
+
+# Check if binary exists and copy it
+RUN ls -la target/release/
+RUN ls -la target/release/convex-local-backend
+RUN cp target/release/convex-local-backend ./test-binary
+RUN ls -la ./test-binary
+
+FROM ubuntu:noble
+RUN apt-get update && apt-get install -y --no-install-recommends libclang1 curl ca-certificates
+WORKDIR /convex
+COPY --from=build /convex/test-binary ./convex-local-backend
+RUN chmod +x ./convex-local-backend
+ENTRYPOINT ["./convex-local-backend"]
