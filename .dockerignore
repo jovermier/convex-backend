@@ -7,6 +7,7 @@
 # Rust-related includes
 !/Cargo.*
 !/crates*/*
+!/third_party*/*
 !/.cargo/*
 !/rust-toolchain
 !/self-hosted/*
